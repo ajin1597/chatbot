@@ -4,13 +4,19 @@ import pandas as pd
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import json
+from flask import Flask
+from flask_restx import Api, Resource
+from flask_cors import CORS
 
-@st.cache(allow_output_mutation=True)
+
+app = Flask(__name__)
+api = Api(app)
+CORS(app)
+
 def cached_model():
     model = SentenceTransformer('jhgan/ko-sroberta-multitask')
     return model
 
-@st.cache(allow_output_mutation=True)
 def get_dataset():
     df = pd.read_csv('wellness_dataset.csv')
     df['embedding'] = df['embedding'].apply(json.loads)
@@ -19,29 +25,17 @@ def get_dataset():
 model = cached_model()
 df = get_dataset()
 
-st.header('인공지능 상담 챗봇')
-st.markdown("개발자의 길을 걷고 있는 번아웃된 심리상담")
+        
+@api.route('/chatbot/<string:user_input>')
+class chatbot(Resource):
+    def get(self, user_input):
+        embedding = model.encode(user_input)
 
-if 'generated' not in st.session_state:
-    st.session_state['generated'] = []
+        df['distance'] = df['embedding'].map(lambda x: cosine_similarity([embedding], [x]).squeeze())
+        answer = df.loc[df['distance'].idxmax()]
 
-if 'past' not in st.session_state:
-    st.session_state['past'] = []
+        return {"response":answer['챗봇']}
 
-with st.form('form', clear_on_submit=True):
-    user_input = st.text_input('당신: ', '')
-    submitted = st.form_submit_button('전송')
 
-if submitted and user_input:
-    embedding = model.encode(user_input)
-
-    df['distance'] = df['embedding'].map(lambda x: cosine_similarity([embedding], [x]).squeeze())
-    answer = df.loc[df['distance'].idxmax()]
-
-    st.session_state.past.append(user_input)
-    st.session_state.generated.append(answer['챗봇'])
-
-for i in range(len(st.session_state['past'])):
-    message(st.session_state['past'][i], is_user=True, key=str(i) + '_user')
-    if len(st.session_state['generated']) > i:
-        message(st.session_state['generated'][i], key=str(i) + '_bot')
+if __name__ == "__main__":
+    app.run(debug=True, host='0.0.0.0', port=5000)
